@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a73e8">
+<title>Modo campo · Clientes cerca de ti</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --ink: #1f2933; --muted: #6b7780; --line: #e3e6e8;
+    --brand: #1a73e8; --brand-ink: #ffffff; --ok: #2e7d32; --warn: #b26a00; --chip: #eef2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121417; --card: #1c1f24; --ink: #e8eaed; --muted: #9aa0a6; --line: #30343a; --chip: #262a30; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; font-size: 15px; }
+  header { position: sticky; top: 0; z-index: 1000; background: var(--brand); color: var(--brand-ink); padding: 10px 16px calc(10px) 16px; display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; font-weight: 600; }
+  #gps { font-size: 12px; background: rgba(255,255,255,0.18); padding: 4px 10px; border-radius: 12px; white-space: nowrap; }
+  #map { height: 38vh; min-height: 220px; background: #dfe5ea; }
+  .bar { display: flex; gap: 6px; padding: 10px 16px 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .chip { border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 16px; padding: 7px 12px; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); font-weight: 600; }
+  .info { padding: 2px 16px 8px; color: var(--muted); font-size: 12.5px; }
+  .msg { margin: 10px 16px; padding: 12px 14px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); line-height: 1.45; }
+  .msg.warn { border-color: #f0b46a; background: #fff4e5; color: #6b3a00; }
+  @media (prefers-color-scheme: dark) { .msg.warn { background: #3a2a12; color: #ffd8a8; border-color: #7a5520; } }
+  ol#list { list-style: none; margin: 0; padding: 0 12px 110px; }
+  ol#list li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 8px 4px; padding: 10px 12px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .num { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dist { flex: none; text-align: right; font-weight: 700; color: var(--brand); }
+  .dir { display: inline-block; transition: transform .3s; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 3px 0 0 38px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .det { margin: 8px 0 0 38px; font-size: 13px; display: none; }
+  li.open .det { display: block; }
+  .det div { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+  .det b { text-align: right; }
+  .acts { display: flex; gap: 8px; margin: 8px 0 0 38px; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 9px 14px; font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn.main { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; background: var(--card); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
+  footer .btn { flex: 1; text-align: center; }
+  .me { width: 18px; height: 18px; border-radius: 50%; background: #1a73e8; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,232,.35), 0 1px 4px rgba(0,0,0,.4); }
+  .pin { width: 26px; height: 26px; border-radius: 50%; color: #fff; font: 700 12px "Segoe UI", sans-serif; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); }
+  .pin.small { width: 12px; height: 12px; border-width: 1.5px; font-size: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📍 Cerca de ti</h1>
+  <span id="gps">Buscando GPS…</span>
+</header>
+<div id="map"></div>
+<div class="bar" id="radios"></div>
+<div class="info" id="info"></div>
+<div id="msgs"></div>
+<ol id="list"></ol>
+<footer>
+  <a class="btn main" id="routeBtn" href="#" target="_blank" rel="noopener">🧭 Ruta con los 10 más cercanos</a>
+  <button class="btn" id="followBtn" type="button">🎯 Seguirme</button>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var DATA = null, ME = null, ACC = null, HEADING = null, RADIUS = 1, FOLLOW = true, OPEN = {}, manualPos = false;
+  var map = null, meMarker = null, accCircle = null, layer = null, nearLayer = null;
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- datos que vienen en el enlace (#z=… comprimido o #j=… sin comprimir) ----------
+  function b64urlToBytes(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "=";
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function decode(h) {
+    if (h.indexOf("z=") === 0) {
+      var bytes = b64urlToBytes(h.slice(2));
+      if (typeof DecompressionStream !== "function") return Promise.reject(new Error("Este navegador es muy antiguo"));
+      var ds = new DecompressionStream("deflate-raw");
+      return new Response(new Blob([bytes]).stream().pipeThrough(ds)).text().then(JSON.parse);
+    }
+    if (h.indexOf("j=") === 0) return Promise.resolve(JSON.parse(new TextDecoder().decode(b64urlToBytes(h.slice(2)))));
+    return Promise.resolve(null);
+  }
+  function save(d) { try { localStorage.setItem("modoCampoDatos", JSON.stringify(d)); } catch (e) { /* sin almacenamiento */ } }
+  function load() { try { var t = localStorage.getItem("modoCampoDatos"); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
+
+  // ---------- utilidades ----------
+  function distKm(aLat, aLon, bLat, bLon) {
+    var R = 6371, r = Math.PI / 180, dLat = (bLat - aLat) * r, dLon = (bLon - aLon) * r;
+    var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(aLat * r) * Math.cos(bLat * r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  function bearing(aLat, aLon, bLat, bLon) {
+    var r = Math.PI / 180, y = Math.sin((bLon - aLon) * r) * Math.cos(bLat * r);
+    var x = Math.cos(aLat * r) * Math.sin(bLat * r) - Math.sin(aLat * r) * Math.cos(bLat * r) * Math.cos((bLon - aLon) * r);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+  function cardinal(b) { return ["N", "NE", "E", "SE", "S", "SO", "O", "NO"][Math.round(b / 45) % 8]; }
+  function fmt(km) { return km < 1 ? Math.round(km * 1000) + " m" : (km < 10 ? km.toFixed(1) : Math.round(km)) + " km"; }
+  function el(tag, cls, parent, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; if (parent) parent.appendChild(e); return e; }
+  function navUrl(c) { return "https://www.google.com/maps/dir/?api=1&travelmode=" + (DATA.modo || "driving") + "&destination=" + c.lat.toFixed(6) + "%2C" + c.lon.toFixed(6); }
+  function pinUrl(c) { return "https://www.google.com/maps/search/?api=1&query=" + c.lat.toFixed(6) + "%2C" + c.lon.toFixed(6); }
+  function msg(text, warn) { var m = $("msgs"); m.innerHTML = ""; if (text) { var d = el("div", "msg" + (warn ? " warn" : ""), m); d.textContent = text; } }
+
+  // ---------- mapa (opcional: si Leaflet no carga, la lista sigue funcionando) ----------
+  function initMap() {
+    if (typeof L === "undefined") { $("map").style.display = "none"; return; }
+    map = L.map("map", { zoomControl: true, attributionControl: true }).setView([23.6, -102.5], 5);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19, attribution: "Mapa © Esri"
+    }).addTo(map);
+    layer = L.layerGroup().addTo(map); nearLayer = L.layerGroup().addTo(map);
+    map.on("dragstart", function () { setFollow(false); });
+    map.on("click", function (e) {
+      if (ME && !manualPos) return;
+      manualPos = true; setMe(e.latlng.lat, e.latlng.lng, null);
+      $("gps").textContent = "Punto elegido a mano";
+    });
+  }
+  function drawAll() {
+    if (!map || !DATA) return;
+    layer.clearLayers();
+    DATA.r.forEach(function (c) {
+      var col = c.cat >= 0 && DATA.cats[c.cat] ? DATA.cats[c.cat].c : "#1a73e8";
+      var icon = L.divIcon({ className: "", html: '<div class="pin small" style="background:' + col + '"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
+      var m = L.marker([c.lat, c.lon], { icon: icon, keyboard: false });
+      m.on("click", function () { openItem(c.i, true); });
+      m.addTo(layer);
+    });
+  }
+
+  // ---------- GPS ----------
+  function setMe(lat, lon, acc) {
+    ME = { lat: lat, lon: lon }; ACC = acc;
+    if (map) {
+      if (!meMarker) {
+        meMarker = L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 }).addTo(map);
+        accCircle = L.circle([lat, lon], { radius: acc || 0, color: "#1a73e8", weight: 1, fillOpacity: 0.08 }).addTo(map);
+      } else { meMarker.setLatLng([lat, lon]); accCircle.setLatLng([lat, lon]).setRadius(acc || 0); }
+    }
+    render();
+  }
+  function startGps() {
+    if (!navigator.geolocation) { $("gps").textContent = "Sin GPS"; msg("Este navegador no permite usar la ubicación. Toca el mapa para elegir tu punto.", true); return; }
+    navigator.geolocation.watchPosition(function (p) {
+      manualPos = false;
+      $("gps").textContent = "GPS ±" + Math.round(p.coords.accuracy) + " m";
+      if (p.coords.heading !== null && !isNaN(p.coords.heading)) HEADING = p.coords.heading;
+      setMe(p.coords.latitude, p.coords.longitude, p.coords.accuracy);
+    }, function (err) {
+      $("gps").textContent = "GPS no disponible";
+      msg(err.code === 1
+        ? "El permiso de ubicación está bloqueado para este navegador. Actívalo en Ajustes → Aplicaciones → (tu navegador) → Permisos → Ubicación, y vuelve a abrir la página. Mientras tanto puedes tocar el mapa para elegir tu punto."
+        : "No se pudo obtener la ubicación. Revisa que el GPS esté encendido. Puedes tocar el mapa para elegir tu punto.", true);
+    }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+  }
+  // brújula (si el teléfono la ofrece) para girar las flechas
+  window.addEventListener("deviceorientationabsolute", onOri, true);
+  window.addEventListener("deviceorientation", onOri, true);
+  function onOri(e) {
+    var h = e.webkitCompassHeading !== undefined ? e.webkitCompassHeading : (e.absolute && e.alpha !== null ? 360 - e.alpha : null);
+    if (h !== null && !isNaN(h)) { HEADING = h; rotateArrows(); }
+  }
+  function rotateArrows() {
+    var arrows = document.querySelectorAll(".dir");
+    for (var i = 0; i < arrows.length; i++) {
+      var b = parseFloat(arrows[i].getAttribute("data-b"));
+      arrows[i].style.transform = "rotate(" + (b - (HEADING || 0)) + "deg)";
+    }
+  }
+
+  // ---------- lista "Cerca de ti" ----------
+  var RADII = [[0.5, "500 m"], [1, "1 km"], [3, "3 km"], [10, "10 km"], [0, "Todos"]];
+  function buildRadios() {
+    var bar = $("radios"); bar.innerHTML = "";
+    RADII.forEach(function (r) {
+      var b = el("button", "chip" + (RADIUS === r[0] ? " on" : ""), bar, r[1]); b.type = "button";
+      b.addEventListener("click", function () { RADIUS = r[0]; try { localStorage.setItem("modoCampoRadio", String(RADIUS)); } catch (e) { /* */ } buildRadios(); render(true); });
+    });
+  }
+  function nearest() {
+    if (!ME || !DATA) return [];
+    var arr = DATA.r.map(function (c) { return { c: c, d: distKm(ME.lat, ME.lon, c.lat, c.lon) }; });
+    arr.sort(function (a, b) { return a.d - b.d; });
+    var lim = RADIUS > 0 ? arr.filter(function (x) { return x.d <= RADIUS; }) : arr;
+    return lim.slice(0, 30);
+  }
+  var lastFitKey = "";
+  function render(refit) {
+    var list = $("list"); list.innerHTML = "";
+    if (!DATA) return;
+    $("info").textContent = DATA.r.length.toLocaleString("es-MX") + " clientes cargados" + (DATA.t ? " · " + DATA.t : "") +
+      (DATA.f ? " · enviados el " + new Date(DATA.f).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) : "");
+    if (!ME) { var w = el("li", "", list); w.textContent = "Esperando tu ubicación… (o toca el mapa para elegir tu punto)"; return; }
+    var N = nearest();
+    if (!N.length) {
+      var e0 = el("li", "", list); e0.textContent = "No hay clientes dentro de " + (RADII.filter(function (r) { return r[0] === RADIUS; })[0] || [0, ""])[1] + ". Prueba con un radio mayor.";
+    }
+    N.forEach(function (x, k) {
+      var c = x.c, li = el("li", OPEN[c.i] ? "open" : "", list); li.id = "c" + c.i;
+      var row = el("div", "row", li);
+      el("div", "num", row, String(k + 1));
+      el("div", "name", row, c.n);
+      var dist = el("div", "dist", row);
+      var b = bearing(ME.lat, ME.lon, c.lat, c.lon);
+      var ar = el("span", "dir", dist, "⬆"); ar.setAttribute("data-b", b);
+      dist.appendChild(document.createTextNode(" " + fmt(x.d)));
+      var sub = el("div", "sub", li);
+      if (c.cat >= 0 && DATA.cats[c.cat]) { var dot = el("span", "dot", sub); dot.style.background = DATA.cats[c.cat].c; el("span", "", sub, (DATA.cn ? DATA.cn + ": " : "") + DATA.cats[c.cat].n + " ·"); }
+      el("span", "", sub, "hacia el " + cardinal(b));
+      var det = el("div", "det", li);
+      (c.v || []).forEach(function (v, j) { if (v === null || v === "") return; var d = el("div", "", det); el("span", "", d, DATA.cols[j] || ""); el("b", "", d, String(v)); });
+      var acts = el("div", "acts", li);
+      var nv = el("a", "btn main", acts, "Navegar"); nv.href = navUrl(c); nv.target = "_blank"; nv.rel = "noopener";
+      var pn = el("a", "btn", acts, "📍 Ver en Maps"); pn.href = pinUrl(c); pn.target = "_blank"; pn.rel = "noopener";
+      if (map) { var vm = el("button", "btn", acts, "Ver en el mapa"); vm.type = "button"; vm.addEventListener("click", function (ev) { ev.stopPropagation(); setFollow(false); map.setView([c.lat, c.lon], 17); }); }
+      row.addEventListener("click", function () { OPEN[c.i] = !OPEN[c.i]; li.classList.toggle("open"); });
+    });
+    rotateArrows();
+    // ruta con los 10 más cercanos (Google Maps arranca desde donde estés)
+    var ten = N.slice(0, 10).map(function (x) { return x.c; });
+    var rb = $("routeBtn");
+    if (ten.length) {
+      var dest = ten[ten.length - 1], wps = ten.slice(0, -1);
+      rb.href = "https://www.google.com/maps/dir/?api=1&travelmode=" + (DATA.modo || "driving") + "&destination=" + dest.lat.toFixed(6) + "%2C" + dest.lon.toFixed(6) +
+        (wps.length ? "&waypoints=" + wps.map(function (c) { return c.lat.toFixed(6) + "%2C" + c.lon.toFixed(6); }).join("%7C") : "");
+      rb.style.opacity = 1; rb.textContent = "🧭 Ruta con los " + ten.length + " más cercanos";
+    } else { rb.removeAttribute("href"); rb.style.opacity = 0.5; }
+    // mapa: numerar los cercanos y encuadrar
+    if (map) {
+      nearLayer.clearLayers();
+      N.slice(0, 10).forEach(function (x, k) {
+        var col = x.c.cat >= 0 && DATA.cats[x.c.cat] ? DATA.cats[x.c.cat].c : "#1a73e8";
+        var mk = L.marker([x.c.lat, x.c.lon], { icon: L.divIcon({ className: "", html: '<div class="pin" style="background:' + col + '">' + (k + 1) + "</div>", iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 500 });
+        mk.on("click", function () { openItem(x.c.i, true); });
+        mk.addTo(nearLayer);
+      });
+      var key = RADIUS + "|" + N.slice(0, 5).map(function (x) { return x.c.i; }).join(",");
+      if (FOLLOW && (refit || key !== lastFitKey)) {
+        lastFitKey = key;
+        var pts = [[ME.lat, ME.lon]].concat(N.slice(0, 10).map(function (x) { return [x.c.lat, x.c.lon]; }));
+        if (pts.length > 1) map.fitBounds(pts, { padding: [30, 30], maxZoom: 17 }); else map.setView([ME.lat, ME.lon], 15);
+      }
+    }
+  }
+  function openItem(i, scroll) {
+    OPEN[i] = true;
+    var li = $("c" + i);
+    if (li) { li.classList.add("open"); if (scroll) li.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    else if (DATA) {
+      var c = DATA.r[i]; if (!c) return;
+      msg(c.n + " no está entre los más cercanos de este radio. Distancia: " + (ME ? fmt(distKm(ME.lat, ME.lon, c.lat, c.lon)) : "—"));
+    }
+  }
+  function setFollow(on) { FOLLOW = on; $("followBtn").textContent = on ? "🎯 Siguiéndote" : "🎯 Seguirme"; $("followBtn").classList.toggle("main", on); }
+  $("followBtn").addEventListener("click", function () { setFollow(!FOLLOW); if (FOLLOW) render(true); });
+
+  // ---------- arranque ----------
+  try { var r0 = parseFloat(localStorage.getItem("modoCampoRadio")); if (!isNaN(r0)) RADIUS = r0; } catch (e) { /* */ }
+  buildRadios(); setFollow(true); initMap();
+  var h = location.hash.replace(/^#/, "");
+  decode(h).then(function (d) {
+    if (d) { save(d); try { history.replaceState(null, "", location.pathname); } catch (e) { /* */ } }
+    else d = load();
+    if (!d || !d.r) {
+      msg("No hay clientes cargados. Abre esta página desde el botón 📱 «Modo campo» del mapa en Power BI.", true);
+      return;
+    }
+    d.r = d.r.map(function (a, i) { return { i: i, lat: a[0], lon: a[1], n: a[2], cat: a[3], v: a[4] }; });
+    DATA = d;
+    drawAll(); render(true); startGps();
+  }).catch(function (e) { msg("No se pudieron leer los datos del enlace: " + e.message, true); });
+})();
+</script>
+</body>
+</html>
