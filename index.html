@@ -188,23 +188,41 @@
       b.addEventListener("click", function () { RADIUS = r[0]; try { localStorage.setItem("modoCampoRadio", String(RADIUS)); } catch (e) { /* */ } buildRadios(); render(true); });
     });
   }
+  var OUTSIDE = false; // true cuando no hay nadie en el radio y se muestran los más cercanos de todos modos
   function nearest() {
+    OUTSIDE = false;
     if (!ME || !DATA) return [];
     var arr = DATA.r.map(function (c) { return { c: c, d: distKm(ME.lat, ME.lon, c.lat, c.lon) }; });
     arr.sort(function (a, b) { return a.d - b.d; });
     var lim = RADIUS > 0 ? arr.filter(function (x) { return x.d <= RADIUS; }) : arr;
+    if (!lim.length && arr.length) { OUTSIDE = true; return arr.slice(0, 10); }
     return lim.slice(0, 30);
   }
   var lastFitKey = "";
   function render(refit) {
     var list = $("list"); list.innerHTML = "";
     if (!DATA) return;
-    $("info").textContent = DATA.r.length.toLocaleString("es-MX") + " clientes cargados" + (DATA.t ? " · " + DATA.t : "") +
+    var counts = {}; DATA.r.forEach(function (c) { if (c.cat >= 0) counts[c.cat] = (counts[c.cat] || 0) + 1; });
+    var parts = Object.keys(counts).map(function (k) { return counts[k].toLocaleString("es-MX") + " " + DATA.cats[k].n; });
+    $("info").textContent = (DATA.cut && DATA.n
+        ? DATA.r.length.toLocaleString("es-MX") + " de " + DATA.n.toLocaleString("es-MX") + " clientes (los más cercanos a la zona que veías en Power BI)"
+        : DATA.r.length.toLocaleString("es-MX") + " clientes cargados") +
+      (parts.length && parts.length <= 4 ? " · " + parts.join(", ") : "") + (DATA.t ? " · " + DATA.t : "") +
       (DATA.f ? " · enviados el " + new Date(DATA.f).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) : "");
+    if (DATA.cut && !$("cutNote")) {
+      var cn = el("div", "msg", $("msgs")); cn.id = "cutNote";
+      cn.textContent = "Se mandaron solo los " + DATA.r.length.toLocaleString("es-MX") + " clientes más cercanos a lo que se veía en el mapa de Power BI. " +
+        "Si no ves los de tu zona: en Power BI acerca el mapa a donde estás (o filtra tu Cedis) y vuelve a tocar 📍.";
+    }
     if (!ME) { var w = el("li", "", list); w.textContent = "Esperando tu ubicación… (o toca el mapa para elegir tu punto)"; return; }
     var N = nearest();
     if (!N.length) {
-      var e0 = el("li", "", list); e0.textContent = "No hay clientes dentro de " + (RADII.filter(function (r) { return r[0] === RADIUS; })[0] || [0, ""])[1] + ". Prueba con un radio mayor.";
+      var e0 = el("li", "", list); e0.textContent = "No hay clientes cargados.";
+    } else if (OUTSIDE) {
+      var rname = (RADII.filter(function (r) { return r[0] === RADIUS; })[0] || [0, ""])[1];
+      var e1 = el("li", "", list);
+      e1.style.borderColor = "#f0b46a";
+      e1.textContent = "No hay clientes dentro de " + rname + ". El más cercano está a " + fmt(N[0].d) + "; estos son los 10 más cercanos:";
     }
     N.forEach(function (x, k) {
       var c = x.c, li = el("li", OPEN[c.i] ? "open" : "", list); li.id = "c" + c.i;
